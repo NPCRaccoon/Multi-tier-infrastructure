@@ -1,0 +1,480 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFormationProject
+
+# Parameters contains; VPC, Subnet, DB user and Pass, AMI
+Parameters:
+  CloudFormationProject:
+    Description: Project test for security and availability
+    Type: String
+
+  VPCCidr:
+    Description: VPC ID
+    Type: String
+    Default: 10.0.0.0/16
+
+  # Presentation Tier 
+  PublicSubnetACidr:
+    Description: Public Subnet for AZ a, Presentation Tier
+    Type: String
+    Default: 10.0.10.0/24
+  PublicSubnetBCidr:
+    Description: Public Subnet for AZ b, Presentation Tier
+    Type: String
+    Default: 10.0.11.0/24
+  # Logic Tier
+  PrivateSubnetCCidr:
+    Description: Private Subnet for AZ a, Logic Tier
+    Type: String
+    Default: 10.0.20.0/24
+  PrivateSubnetDCidr:
+    Description: Private Subnet for AZ b, Logic Tier
+    Type: String
+    Default: 10.0.21.0/24
+  # Data Tier
+  PrivateSubnetECidr:
+    Description: Private Subnet for AZ a, Data Tier
+    Type: String
+    Default: 10.0.30.0/24
+  PrivateSubnetFCidr:
+    Description: Private Subnet for AZ b, Data Tier
+    Type: String
+    Default: 10.0.31.0/24
+
+  # DB user and pass
+  DBUsername:
+    Type: String
+  DBPassword:
+    Type: String
+
+  AMIID:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCidr
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Ref CloudFormationProject
+
+  IGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: CloudFormationProject IGW
+
+  VPCtoIGWConnection:
+    Type: AWS::EC2::VPCGatewayAttachment
+    DependsOn:
+      - IGW
+      - VPC
+    Properties:
+      InternetGatewayId: !Ref IGW
+      VpcId: !Ref VPC
+
+  # Public Route table for the IGW
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: CloudFormationProject PublicRouteTable
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - PublicRouteTable
+      - IGW
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref IGW
+
+  # Private Route table for the NGW AZa
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: CloudFormationProject PrivateRouteTableAZa
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway1
+
+  # Private Route table for the NGW AZb  
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: CloudFormationProject PrivateRouteTableAZb
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway2
+
+  # Public Subnet
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    DependsOn: VPC
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Ref PublicSubnetACidr
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value: Public SubnetA
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn:
+      - PublicRouteTable
+      - PublicSubnetA
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetA
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    DependsOn: VPC
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Ref PublicSubnetBCidr
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value: Public SubnetB
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn:
+      - PublicRouteTable
+      - PublicSubnetB
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetB
+
+  # Security Group for Presentation Tier
+  PresentationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: VPC
+    Properties:
+      GroupName: SG Presentation Tier
+      GroupDescription: HTTP access
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: SG Presentation Tier
+
+  # Private Subnet Logic Tier
+  PrivateSubnetC:
+    Type: AWS::EC2::Subnet
+    DependsOn: VPC
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: false
+      CidrBlock: !Ref PrivateSubnetCCidr
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value: Private SubnetC
+  PrivateSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnetC
+
+  PrivateSubnetD:
+    Type: AWS::EC2::Subnet
+    DependsOn: VPC
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: false
+      CidrBlock: !Ref PrivateSubnetDCidr
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value: Private SubnetD
+  PrivateSubnetDRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnetD
+
+  # Security Group for Logic Tier
+  LogicSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: VPC
+    Properties:
+      GroupName: SG Logic Tier
+      GroupDescription: SSH and HTTPS access
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: SG Logic Tier
+
+  # Private Subnet Data Tier
+  PrivateSubnetE:
+    Type: AWS::EC2::Subnet
+    DependsOn: VPC
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: false
+      CidrBlock: !Ref PrivateSubnetECidr
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value: Private SubnetE
+  PrivateSubnetERouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnetE
+      
+  PrivateSubnetF:
+    Type: AWS::EC2::Subnet
+    DependsOn: VPC
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: false
+      CidrBlock: !Ref PrivateSubnetFCidr
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Key: Name
+          Value: Private SubnetF
+  PrivateSubnetFRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnetF
+
+  # Security Group for Data Tier
+  DataSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: VPC
+    Properties:
+      GroupName: SG Data Tier
+      GroupDescription: RDS access
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: SG Data Tier
+
+  # NAT for Private Subnet
+  NATGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !Ref NatGateway1EIP
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: stack
+          Value: CloudFormationProject NAT
+  NATGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !Ref NatGateway2EIP
+      SubnetId: !Ref PublicSubnetB
+      Tags:
+        - Key: stack
+          Value: CloudFormationProject NAT
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCtoIGWConnection
+    Properties:
+      Domain: VPC
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCtoIGWConnection
+    Properties:
+      Domain: VPC
+
+  # Subnet Group
+  SubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: Subnet group for RDS
+      DBSubnetGroupDescription: Subnet for RDS
+      SubnetIds:
+        - !Ref PrivateSubnetE
+        - !Ref PrivateSubnetF
+
+  # Launch Template
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: CloudFormationProject
+      LaunchTemplateData:
+        ImageId: !Ref AMIID
+        InstanceType: t2.micro
+        KeyName: keypair
+        SecurityGroupIds:
+          - !Ref PresentationSecurityGroup
+          - !Ref LogicSecurityGroup
+          - !Ref DataSecurityGroup
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: CloudFormationProject
+
+  # Autoscaling
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: CloudFormationProject
+      VPCZoneIdentifier:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+        - !Ref PrivateSubnetC
+        - !Ref PrivateSubnetD
+        - !Ref PrivateSubnetE
+        - !Ref PrivateSubnetF
+      AvailabilityZones:
+        - !Select
+          - 0
+          - !GetAZs
+            Ref: AWS::Region
+        - !Select
+          - 1
+          - !GetAZs
+            Ref: AWS::Region
+      DesiredCapacity: 2
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: 1
+      MaxSize: 5
+      MinSize: 2
+    CreationPolicy:
+      ResourceSignal:
+        Count: 2
+        Timeout: PT10M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: 1
+        MinInstancesInService: 2
+        PauseTime: PT10M
+        WaitOnResourceSignals: true
+
+  # Target group for Public Subnet A and B
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: CloudFormationProject
+      VpcId: !Ref VPC
+      Port: 80
+      Protocol: HTTP
+      HealthCheckProtocol: HTTP
+      HealthCheckEnabled: true
+      HealthCheckPath: /
+      HealthCheckPort: 80
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetType: instance
+
+  # Load Balancer attached to TargetGroup
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: VPC
+    Properties:
+      Name: CloudFormationProject
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      SecurityGroups:
+        - !Ref PresentationSecurityGroup
+      Tags:
+        - Key: Name
+          Value: CloudFormationProject
+
+  # DBcluster in RDS
+  DBCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      Engine: mysql
+      DBSubnetGroupName: !Ref SubnetGroup
+      DatabaseName: HippoProject
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      VpcSecurityGroupIds:
+        - !Ref DataSecurityGroup
+      AvailabilityZones:
+        - !Select
+          - 0
+          - !GetAZs
+            Ref: AWS::Region
+        - !Select
+          - 1
+          - !GetAZs
+            Ref: AWS::Region
+
+  # RDS instance
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: mysql
+      DBClusterIdentifier: !Ref DBCluster          
+      DBInstanceClass: db.t3.medium
+      PubliclyAccessible: false
+  # RDS read replica
+  ReadReplica:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: snailreadreplica
+      SourceDBInstanceIdentifier: !Ref RDSInstance
+      DBInstanceClass: db.t3.micro
+      AvailabilityZone:
+        - !Select
+          - 1
+          - !GetAZs
+            Ref: AWS::Region 
+      PubliclyAccessible: false
+  
