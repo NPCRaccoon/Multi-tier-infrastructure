@@ -172,6 +172,33 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnetB
 
+  # EC2 instances for Presentation Tier in PublicSubnetA and PublicSubnetB
+  EC2InstanceA:
+    Type: AWS::EC2::Instance
+    DependsOn: PublicSubnetA
+    Properties:
+      InstanceType: t2.micro
+      ImageId: !Ref AMIID
+      SubnetId: !Ref PublicSubnetA
+      SecurityGroupIds:
+        - !Ref PresentationSecurityGroup
+      Tags:
+        - Key: Name
+          Value: EC2InstanceA
+  EC2InstanceB:
+    Type: AWS::EC2::Instance
+    DependsOn: PublicSubnetB
+    Properties:
+      InstanceType: t2.micro
+      ImageId: !Ref AMIID
+      SubnetId: !Ref PublicSubnetB
+      SecurityGroupIds:
+        - !Ref PresentationSecurityGroup
+      Tags:
+        - Key: Name
+          Value: EC2InstanceB
+
+
   # Security Group for Presentation Tier
   PresentationSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -232,6 +259,32 @@ Resources:
     Properties:
       RouteTableId: !Ref PrivateRouteTable2
       SubnetId: !Ref PrivateSubnetD
+
+  # EC2 instances for Logic Tier in PrivateSubnetC and PrivateSubnetD
+  EC2InstanceC:
+    Type: AWS::EC2::Instance
+    DependsOn: PrivateSubnetC
+    Properties:
+      InstanceType: t2.micro
+      ImageId: !Ref AMIID
+      SubnetId: !Ref PrivateSubnetC
+      SecurityGroupIds:
+        - !Ref LogicSecurityGroup 
+      Tags:
+        - Key: Name
+          Value: EC2InstanceC     
+  EC2InstanceD:
+    Type: AWS::EC2::Instance
+    DependsOn: PrivateSubnetD
+    Properties:
+      InstanceType: t2.micro
+      ImageId: !Ref AMIID
+      SubnetId: !Ref PrivateSubnetD
+      SecurityGroupIds:
+        - !Ref LogicSecurityGroup
+      Tags:
+        - Key: Name
+          Value: EC2InstanceD
 
   # Security Group for Logic Tier
   LogicSecurityGroup:
